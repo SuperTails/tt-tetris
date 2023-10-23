@@ -185,13 +185,20 @@ module tt_um_supertails_tetris
 
 		.buttons(buttons_db)
 	);
-	
+
 	assign uo_out[0] = hsync;
 	assign uo_out[1] = vsync;
 
 	assign uo_out[2] = r_signal;
 	assign uo_out[3] = g_signal;
 	assign uo_out[4] = b_signal;
+
+	assign uo_out[5] = 1'b0;
+	assign uo_out[6] = 1'b0;
+	assign uo_out[7] = 1'b0;
+
+	assign uio_out = 8'b0;
+	assign uio_oe = 8'b0;
 
 	always_comb begin
 		buttons.left  = ui_in[0];
