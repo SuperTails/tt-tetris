@@ -206,7 +206,7 @@ module tt_um_supertails_tetris
 		buttons_q1 <= buttons_q0;
 	end
 
-endmodule : ChipInterface
+endmodule : tt_um_supertails_tetris
 
 module Tetris 
 	(
