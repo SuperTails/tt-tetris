@@ -232,7 +232,7 @@ module Tetris
 
 	logic [9:0] scanline;
 	//logic [10:0] pixel;
-	logic [8:0] pixel;
+	logic [7:0] pixel;
 
 	logic porch;
 
@@ -267,7 +267,7 @@ module Tetris
 		
 		.pressed_buttons, .poll_inputs);
 	
-	logic [3:0] mem_data_out;
+	logic [2:0] mem_data_out;
 	Memory memory(
 		.sck(clk6_25),
 		.start(mem_start),

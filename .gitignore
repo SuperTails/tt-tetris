@@ -3,6 +3,7 @@
 .vscode
 *.vcd
 runs
+sim_build/
 src/sim_build
 src/__pycache__/
 src/__tinytapeout

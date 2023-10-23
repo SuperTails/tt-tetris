@@ -501,9 +501,12 @@ module Game (
 
 	`ifdef __ICARUS__
 	assign new_falling_tile_kind = tile_t'(lfsr_state[2:0] == 3'd0 ? 3'd1 : lfsr_state[2:0]);
+	`elsif verilator
+	assign new_falling_tile_kind = tile_t'(lfsr_state[2:0] == 3'd0 ? 3'd1 : lfsr_state[2:0]);
 	`else
 	assign new_falling_tile_kind = (lfsr_state[2:0] == 3'd0 ? 3'd1 : lfsr_state[2:0]);
 	`endif
+
 	assign load_new_falling_tile = (state == COLLAPSING);
 
 	logic [15:0] falling_data;
