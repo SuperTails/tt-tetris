@@ -4,6 +4,7 @@
 *.vcd
 runs
 sim_build/
+build/
 src/sim_build
 src/__pycache__/
 src/__tinytapeout

@@ -93,12 +93,31 @@ module FpgaInterface
 	Debouncer dw(.clk(clk6_25), .signal(buttons_q1.cw   ), .debounced(buttons_db.cw   ));
 	Debouncer dc(.clk(clk6_25), .signal(buttons_q1.ccw  ), .debounced(buttons_db.ccw  ));
 
+	logic [2:0] mem_data_in;
+	logic [2:0] mem_data_out;
+	logic mem_start;
+	logic mem_write_enable;
+	logic mem_cont;
+	address_t mem_addr;
+
 	Tetris tetris(
 		.clk6_25, .reset_n,
 
 		.r_signal, .g_signal, .b_signal, .hsync, .vsync,
 
-		.buttons(buttons_db)
+		.buttons(buttons_db),
+		
+		.mem_data_in, .mem_data_out, .mem_start, .mem_write_enable, .mem_cont, .mem_addr
+	);
+
+	Memory memory(
+		.sck(clk6_25),
+		.start(mem_start),
+		.write_enable(mem_write_enable),
+		.cont(mem_cont),
+		.addr(mem_addr),
+		.data_in(mem_data_out),
+		.data_out(mem_data_in)
 	);
 	
 	assign led[0] = hsync; // B21
@@ -178,12 +197,21 @@ module tt_um_supertails_tetris
 	Debouncer dw(.clk(clk), .signal(buttons_q1.cw   ), .debounced(buttons_db.cw   ));
 	Debouncer dc(.clk(clk), .signal(buttons_q1.ccw  ), .debounced(buttons_db.ccw  ));
 
+	logic [2:0] mem_data_in;
+	logic [2:0] mem_data_out;
+	logic mem_start;
+	logic mem_write_enable;
+	logic mem_cont;
+	address_t mem_addr;
+
 	Tetris tetris(
 		.clk6_25(clk), .reset_n(rst_n),
 
 		.r_signal, .g_signal, .b_signal, .hsync, .vsync,
 
-		.buttons(buttons_db)
+		.buttons(buttons_db),
+
+		.mem_data_in, .mem_data_out, .mem_start, .mem_write_enable, .mem_cont, .mem_addr
 	);
 
 	assign uo_out[0] = hsync;
@@ -193,12 +221,19 @@ module tt_um_supertails_tetris
 	assign uo_out[3] = g_signal;
 	assign uo_out[4] = b_signal;
 
-	assign uo_out[5] = 1'b0;
-	assign uo_out[6] = 1'b0;
-	assign uo_out[7] = 1'b0;
+	assign uo_out[5] = mem_start;
+	assign uo_out[6] = mem_write_enable;
+	assign uo_out[7] = mem_cont;
 
-	assign uio_out = 8'b0;
-	assign uio_oe = 8'b0;
+	logic writing;
+	always_ff @(posedge clk)
+		if (mem_start)
+			writing <= mem_write_enable;
+
+	assign mem_data_in = uio_in[2:0];
+	assign uio_out = { 3'b0, mem_start ? mem_addr : { 2'b0, mem_data_out } };
+
+	assign uio_oe = { 5'b0, (writing && ~mem_start) ? 3'b111 : 3'b000 };
 
 	always_comb begin
 		buttons.left  = ui_in[0];
@@ -228,8 +263,8 @@ module Tetris
 
 		input buttons_t buttons,
 
-		//input  logic [3:0] mem_data_out,
-		output logic [2:0] mem_data_in,
+		input  logic [2:0] mem_data_in,
+		output logic [2:0] mem_data_out,
 		output logic mem_start,
 		output logic mem_write_enable,
 		output logic mem_cont,
@@ -274,8 +309,7 @@ module Tetris
 		
 		.pressed_buttons, .poll_inputs);
 	
-	logic [2:0] mem_data_out;
-	Memory memory(
+	/*Memory memory(
 		.sck(clk6_25),
 		.start(mem_start),
 		.write_enable(mem_write_enable),
@@ -283,7 +317,7 @@ module Tetris
 		.addr(mem_addr),
 		.data_in(mem_data_out),
 		.data_out(mem_data_in)
-	);
+	);*/
 
 	//assign r = (scanline[1:0] == 2'b00);
 	//assign g = (scanline[1:0] == 2'b01);
