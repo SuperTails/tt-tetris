@@ -555,7 +555,7 @@ module Game (
 	always_ff @(posedge clk)
 		if (~reset_n)
 			next_new_falling_tile <= TILE_PURPLE;
-		else if (state == COLLAPSING !matrix_has_full_row && update_step && frame_parity == 1'b1)
+		else if (state == COLLAPSING && !matrix_has_full_row && update_step && frame_parity == 1'b1)
 			next_new_falling_tile <= new_falling_tile_kind;
 
 	assign load_new_falling_tile = (state == COLLAPSING) && !matrix_has_full_row && update_step && frame_parity == 1'b1;
