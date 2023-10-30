@@ -137,6 +137,8 @@ module MovementBuffer (
 
 	logic [6:0] fall_timer, next_fall_timer;
 
+	logic [6:0] total_fall_time;
+
 	logic [4:0] next_falling_row;
 	logic [3:0] next_falling_col;
 
@@ -148,6 +150,9 @@ module MovementBuffer (
 	logic [1:0] spin_counter, next_spin_counter;
 
 	assign spin = (spin_counter != 2'd0);
+
+	logic [11:0] accelerate_counter;
+	logic do_accelerate;
 
 	always_comb begin
 		game_should_end = 1'b0;
@@ -170,7 +175,7 @@ module MovementBuffer (
 
 				next_shift = 5'b0;
 				if (fall_timer == 7'd0 || pressed_buttons.down) begin
-					next_fall_timer = FALL_TIME;
+					next_fall_timer = total_fall_time;
 					next_shift.down = 1'b1;
 					next_falling_row = falling_row + 5'd1;
 				end else if (pressed_buttons.left) begin
@@ -224,9 +229,26 @@ module MovementBuffer (
 
 	always_ff @(posedge clk)
 		if (~reset_n)
+			accelerate_counter <= 12'd0;
+		else if (ready_to_move)
+			accelerate_counter <= accelerate_counter + 12'd1;
+	
+	logic [12:0] temp;
+	assign temp = accelerate_counter + 13'd1;
+
+	assign do_accelerate = temp[12];
+	always_ff @(posedge clk)
+		if (~reset_n || game_should_end)
+			total_fall_time <= FALL_TIME;
+		else if (ready_to_move && do_accelerate && total_fall_time > 7'd6)
+			total_fall_time <= total_fall_time - 7'd3; 
+
+	always_ff @(posedge clk)
+		if (~reset_n) begin
 			fall_timer <= FALL_TIME;
-		else
+		end else begin
 			fall_timer <= next_fall_timer;
+		end
 		
 	always_ff @(posedge clk)
 		if (~reset_n)

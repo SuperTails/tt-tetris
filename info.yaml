@@ -54,17 +54,17 @@ documentation:
     - VGA Red
     - VGA Green
     - VGA Blue
-    - none
-    - none
-    - none
+    - Memory Start
+    - Memory Continue
+    - Memory Write Enable
 # A description of what the bidirectional I/O pins do (e.g. I2C SDA, I2C SCL, etc)
   bidirectional:
-    - none
-    - none
-    - none
-    - none
-    - none
-    - none
+    - A0/D0
+    - A1/D1
+    - A2/D2
+    - A3
+    - A4
+    - A5
     - none
     - none
 
