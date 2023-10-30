@@ -215,7 +215,7 @@ module MovementBuffer (
 	always_ff @(posedge clk)
 		if (~reset_n || clear) begin
 			falling_row <= 5'd0;
-			falling_col <= 4'd3;
+			falling_col <= 4'd4;
 		end else if (ready_to_move) begin
 			falling_row <= next_falling_row;
 			falling_col <= next_falling_col;
@@ -363,8 +363,8 @@ module TileSelector (
 	assign falling_row_index = (vert_tile - falling_row + 5'd1);
 	assign falling_row_data_valid = (falling_row <= vert_tile + 5'd1) && (vert_tile < falling_row + 5'd3);
 
-	assign falling_col_index = (horiz_tile - falling_col);
-	assign falling_col_data_valid = (falling_col <= horiz_tile) && (horiz_tile < falling_col + 7'd4);
+	assign falling_col_index = (horiz_tile - falling_col + 4'd1);
+	assign falling_col_data_valid = (falling_col <= horiz_tile + 7'd1) && (horiz_tile < falling_col + 7'd3);
 	/* verilator lint_on WIDTH */
 
 	logic tile;
@@ -392,11 +392,12 @@ module TileSelector (
 
 endmodule : TileSelector
 
-typedef enum logic [1:0] {
+typedef enum logic [2:0] {
 	FALLING,    // The player has control of the falling piece
 	LOCKING,    // The falling piece hit the bottom and is being written to the matrix
 	COLLAPSING, // Complete rows are being deleted
-	GAME_OVER
+	GAME_OVER,
+	RESETTING
 } game_state_t;
 
 module GameState (
@@ -424,7 +425,8 @@ module GameState (
 			FALLING:    if (needs_to_lock) next_state = LOCKING; else next_state = FALLING;
 			LOCKING:    next_state = COLLAPSING;
 			COLLAPSING: if (matrix_has_full_row) next_state = COLLAPSING; else next_state = FALLING;
-			GAME_OVER:  if (any_button_pressed) next_state = COLLAPSING; else next_state = GAME_OVER;
+			GAME_OVER:  if (any_button_pressed) next_state = RESETTING; else next_state = GAME_OVER;
+			RESETTING:  next_state = COLLAPSING;
 		endcase
 
 		if (game_should_end) begin
@@ -539,7 +541,7 @@ module Game (
 	logic raw_falling_tile_present;
 	logic falling_tile_present;
 
-	assign falling_tile_present = raw_falling_tile_present && (state != GAME_OVER);
+	assign falling_tile_present = raw_falling_tile_present && (state != GAME_OVER && state != RESETTING);
 
 	logic [3:0] falling_col;
 	logic [4:0] falling_row;
@@ -660,7 +662,7 @@ module Game (
 	assign mem_start = (pixel[4:1] == 4'b0 && pixel[7:6] == 2'b00);
 	assign mem_cont = row_shift_coarse_enable && ~(mem_write_enable & write_disable);
 
-	assign mem_data_out = (state == GAME_OVER) ? 3'b0 : written_tile;
+	assign mem_data_out = (state == RESETTING) ? 3'b0 : written_tile;
 	//assign mem_data_out = { 1'b0, written_tile };
 	//assign mem_data_out = { 1'b0, scanline[6] ? TILE_RED : TILE_BLUE };
 
@@ -692,10 +694,20 @@ module Game (
 	logic [2:0] displayed_tile;
 	assign displayed_tile = (falling_tile_present ? falling_color : matrix_tile);
 
+	logic text_filled;
+	GameOverText game_over_text(.clk, .filled(text_filled), .horiz, .vert);
+
 	always_comb begin
 		r = displayed_tile[2];
 		g = displayed_tile[1];
 		b = displayed_tile[0];
+
+		if (state == GAME_OVER && text_filled) begin
+			r = 1'b1;
+			g = 1'b0;
+			b = 1'b0;
+		end
+
 
 		/*r = mem_data_in[2];
 		g = mem_data_in[1];
@@ -723,3 +735,36 @@ module Game (
 	assign b = displayed_tile[0];*/
 
 endmodule : Game
+
+module GameOverText(
+	input logic clk,
+
+	output logic filled,
+
+	input horiz_pos_t horiz,
+	input vert_pos_t vert);
+
+	logic [351:0] data = {
+		32'b111110011111001000100111110,
+		32'b100000010001001101100100000,
+		32'b101110011111001010100111000,
+		32'b100010010001001000100100000,
+		32'b111110010001001000100111110,
+		32'b000000000000000000000000000,
+		32'b111110010001001111100111110,
+		32'b100010010001001000000100010,
+		32'b100010001010001110000111110,
+		32'b100010001010001000000100100,
+		32'b111110000100001111100100010
+	};
+
+	always_comb begin
+		if (6'd3 <= vert.tile && vert.tile < 6'd14 && 7'd1 <= horiz.tile && horiz.tile < 7'd28) begin
+			filled = data[((9'd13 - vert.tile) << 5) | (7'd27 - horiz.tile)];
+		end else begin
+			filled = 1'b0;
+		end
+	end
+
+
+endmodule : GameOverText
