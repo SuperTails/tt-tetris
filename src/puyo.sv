@@ -550,13 +550,21 @@ module Game (
 	assign new_falling_tile_kind = (raw_new_falling_tile_kind);
 	`endif
 
-	assign load_new_falling_tile = (state == COLLAPSING);
+	tile_t next_new_falling_tile;
+
+	always_ff @(posedge clk)
+		if (~reset_n)
+			next_new_falling_tile <= TILE_PURPLE;
+		else if (state == COLLAPSING !matrix_has_full_row && update_step && frame_parity == 1'b1)
+			next_new_falling_tile <= new_falling_tile_kind;
+
+	assign load_new_falling_tile = (state == COLLAPSING) && !matrix_has_full_row && update_step && frame_parity == 1'b1;
 
 	logic [15:0] falling_data;
 	tile_t falling_color;
 
 	FallingBuffer falling_buffer(
-		.clk, .new_tile(new_falling_tile_kind), .load_new(load_new_falling_tile), .spin,
+		.clk, .new_tile(next_new_falling_tile), .load_new(load_new_falling_tile), .spin,
 		.data(falling_data), .color(falling_color)
 	);
 
@@ -713,8 +721,18 @@ module Game (
 
 	/* Output matrix and falling colors */
 
+	logic [15:0] next_piece_data;
+	TetrominoTable next_tetr_table(.tile(next_new_falling_tile), .data(next_piece_data));
+
 	logic [2:0] displayed_tile;
-	assign displayed_tile = (falling_tile_present ? falling_color : matrix_tile);
+	always_comb
+		if (horiz.tile < 7'd12 && vert.tile < 6'd22)
+			displayed_tile = (falling_tile_present ? falling_color : matrix_tile);
+		else if ((state != GAME_OVER) && 7'd14 <= horiz.tile && horiz.tile < 7'd18 && 6'd4 <= vert.tile && vert.tile < 6'd8) begin
+			displayed_tile = next_piece_data[(((vert.tile - 6'd4) << 2) | (horiz.tile - 7'd14)) & 4'hF] ? next_new_falling_tile : 3'b000;
+		end else begin
+			displayed_tile = 3'b000;
+		end
 
 	logic text_filled;
 	GameOverText game_over_text(.clk, .filled(text_filled), .horiz, .vert);
