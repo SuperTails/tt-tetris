@@ -48,22 +48,10 @@ endmodule : Memory
 // led[0] -> G14 -> IOR_141 -> B21
 // led[1] -> F14 -> IOR_140 -> B20
 
-module FpgaInterface
-	(
-		input logic clk100,
-		input logic reset_n,
-
-		output logic [7:0] base_led,
-
-		output logic [23:0] led,
-
-		input logic [23:0] sw,
-
-		input logic [4:0] btn,
-
-		output logic [3:0] display_sel,
-		output logic [7:0] display
-	);
+module ClockDivider(
+	input logic clk100,
+	output logic clk6_25,
+);
 
 	logic clk50;
 	always_ff @(posedge clk100)
@@ -77,21 +65,38 @@ module FpgaInterface
 	always_ff @(posedge clk25)
 		clk12_5 <= ~clk12_5;
 
-	logic clk6_25;
 	always_ff @(posedge clk12_5)
 		clk6_25 <= ~clk6_25;
+
+
+endmodule : ClockDivider
+
+module FpgaInterface
+	(
+		input logic clk100,
+		input logic reset_n,
+
+		output logic [7:0] base_led,
+
+		output logic [9:0] led,
+
+		inout logic [5:0] mem_addr_data,
+
+		output logic mem_clk,
+
+		input logic [23:0] sw,
+
+		input logic [4:0] btn,
+
+		output logic [3:0] display_sel,
+		output logic [7:0] display
+	);
+
+	logic clk6_25;
+	ClockDivider clock_divider(.clk100, .clk6_25);
 	
 	logic r_signal, g_signal, b_signal;
 	logic hsync, vsync;
-	buttons_t buttons, buttons_q0, buttons_q1;
-
-	buttons_t buttons_db;
-
-	Debouncer dl(.clk(clk6_25), .signal(buttons_q1.left ), .debounced(buttons_db.left ));
-	Debouncer dr(.clk(clk6_25), .signal(buttons_q1.right), .debounced(buttons_db.right));
-	Debouncer dd(.clk(clk6_25), .signal(buttons_q1.down ), .debounced(buttons_db.down ));
-	Debouncer dw(.clk(clk6_25), .signal(buttons_q1.cw   ), .debounced(buttons_db.cw   ));
-	Debouncer dc(.clk(clk6_25), .signal(buttons_q1.ccw  ), .debounced(buttons_db.ccw  ));
 
 	logic [2:0] mem_data_in;
 	logic [2:0] mem_data_out;
@@ -100,26 +105,55 @@ module FpgaInterface
 	logic mem_cont;
 	address_t mem_addr;
 
-	Tetris tetris(
-		.clk6_25, .reset_n,
+	logic [7:0] uio_in;
+	logic [7:0] uio_out;
+	logic [7:0] uio_oe;
 
-		.r_signal, .g_signal, .b_signal, .hsync, .vsync,
-
-		.buttons(buttons_db),
-		
-		.mem_data_in, .mem_data_out, .mem_start, .mem_write_enable, .mem_cont, .mem_addr
+	tt_um_supertails_tetris tetris(
+		.ui_in({ 3'b000, sw[4:0] }),
+		.uo_out({
+			mem_cont, mem_write_enable, mem_start,
+			b_signal, g_signal, r_signal,
+			vsync, hsync }),
+		.uio_in,	// World -> Tetris
+		.uio_out,	// Tetris -> World
+		.uio_oe,
+		.ena(1'b1),
+		.clk(clk6_25),
+		.rst_n(reset_n),
 	);
 
-	Memory memory(
-		.sck(clk6_25),
-		.start(mem_start),
-		.write_enable(mem_write_enable),
-		.cont(mem_cont),
-		.addr(mem_addr),
-		.data_in(mem_data_out),
-		.data_out(mem_data_in)
-	);
-	
+	assign led[9] = mem_start; // C9 -> IOT_190 -> B8
+	assign led[8] = mem_cont; // C10 -> IOT_186 -> B9
+	assign led[7] = mem_write_enable; // A12 -> IOT_170 -> B11
+
+	genvar i;
+	for (i = 0; i < 6; i += 1) begin
+		SB_IO #(
+			.PIN_TYPE(6'b1010_01)	// PIN_OUTPUT_TRISTATE, PIN_INPUT
+		) io_pin (
+			.PACKAGE_PIN(mem_addr_data[i]),
+			.INPUT_CLK(clk6_25),
+			.OUTPUT_CLK(clk6_25),
+			.OUTPUT_ENABLE(uio_oe[i]),
+			.D_OUT_0(uio_out[i]),
+			.D_IN_0(uio_in[i])
+		);
+	end
+
+	// mem_addr_data:
+	// 0: A11 -> IOT_179 -> B6
+	// 1: A10 -> IOT_181 -> B5
+	// 2: A7  -> IOT_197 -> B3
+	// 3: A6  -> IOT_198 -> B2
+	// 4: A4  -> IOT_219 -> A24
+	// 5: A3  -> IOT_222 -> A23
+
+	// (unused)
+	// 6: A2  -> IOT_223 -> A21
+
+	assign mem_clk = uio_out[7] & uio_oe[7];
+
 	assign led[0] = hsync; // B21
 	assign led[1] = vsync; // B20
 
@@ -129,21 +163,12 @@ module FpgaInterface
 
 	assign led[6] = clk6_25; // B12
 
-	always_comb begin
-		buttons.left  = sw[0]; // sw[0] -> G12 -> IOR_129 -> B30
-		buttons.right = sw[1]; // sw[1] -> F12 -> IOR_137 -> B31
-		buttons.down  = sw[2]; // sw[2] -> F11 -> IOR_144 -> B33
-		buttons.cw    = sw[3]; // sw[3] -> E11 -> IOR_146 -> B34
-		buttons.ccw   = sw[4]; // sw[4] -> D12 -> IOR_160 -> B36
-		/*buttons.down = 1'b0;
-		buttons.cw = 1'b0;
-		buttons.ccw = 1'b0;*/
-	end
-
-	always_ff @(posedge clk6_25) begin
-		buttons_q0 <= buttons;
-		buttons_q1 <= buttons_q0;
-	end
+	// Button mappings:
+	// sw[0] -> G12 -> IOR_129 -> B30
+	// sw[1] -> F12 -> IOR_137 -> B31
+	// sw[2] -> F11 -> IOR_144 -> B33
+	// sw[3] -> E11 -> IOR_146 -> B34
+	// sw[4] -> D12 -> IOR_160 -> B36
 
 endmodule : FpgaInterface
 
@@ -204,10 +229,15 @@ module tt_um_supertails_tetris
 	logic mem_cont;
 	address_t mem_addr;
 
+	logic pixel_0;
+	logic mem_clk;
+
+	assign mem_clk = ~pixel_0;
+
 	Tetris tetris(
 		.clk6_25(clk), .reset_n(rst_n),
 
-		.r_signal, .g_signal, .b_signal, .hsync, .vsync,
+		.r_signal, .g_signal, .b_signal, .hsync, .vsync, .pixel_0,
 
 		.buttons(buttons_db),
 
@@ -229,11 +259,13 @@ module tt_um_supertails_tetris
 	always_ff @(posedge clk)
 		if (mem_start)
 			writing <= mem_write_enable;
-
+		
 	assign mem_data_in = uio_in[2:0];
-	assign uio_out = { 3'b0, mem_start ? mem_addr : { 2'b0, mem_data_out } };
+	assign uio_out[7] = mem_clk;
+	assign uio_out[6] = 1'b0;
+	assign uio_out[5:0] = mem_start ? mem_addr : { 2'b0, mem_data_out };
 
-	assign uio_oe = { 5'b0, (writing && ~mem_start) ? 3'b111 : 3'b000 };
+	assign uio_oe = { 2'b10, (writing || mem_start) ? 6'b111111 : 6'b000000 };
 
 	always_comb begin
 		buttons.left  = ui_in[0];
@@ -268,13 +300,17 @@ module Tetris
 		output logic mem_start,
 		output logic mem_write_enable,
 		output logic mem_cont,
-		output address_t mem_addr
+		output address_t mem_addr,
+
+		output logic pixel_0
 	);
 
 
 	logic [9:0] scanline;
 	//logic [10:0] pixel;
 	logic [7:0] pixel;
+
+	assign pixel_0 = pixel[0];
 
 	logic porch;
 
@@ -302,12 +338,17 @@ module Tetris
 		.poll_inputs
 	);
 
+	buttons_t prev_buttons;
+	always_ff @(posedge clk6_25)
+		prev_buttons <= buttons;
+	logic raw_buttons_changed = (buttons != prev_buttons);
+
 	Game game(
 		.clk(clk6_25), .reset_n,
 		.pixel, .scanline, .r, .g, .b,
 		.mem_data_in, .mem_data_out, .mem_start, .mem_write_enable, .mem_cont, .mem_addr,
 		
-		.pressed_buttons, .poll_inputs);
+		.pressed_buttons, .raw_buttons_changed, .poll_inputs);
 	
 	/*Memory memory(
 		.sck(clk6_25),

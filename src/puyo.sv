@@ -20,6 +20,8 @@ module Lfsr(
 	input logic clk,
 	input logic reset_n,
 
+	input logic enable,
+
 	output logic [7:0] state
 );
 	logic [7:0] next_state;
@@ -29,7 +31,7 @@ module Lfsr(
 	always_ff @(posedge clk)
 		if (~reset_n)
 			state <= 8'd1;
-		else
+		else if (enable)
 			state <= next_state;
 
 endmodule : Lfsr
@@ -461,6 +463,7 @@ module Game (
 	output address_t mem_addr,
 
 	input buttons_t pressed_buttons,
+	input logic raw_buttons_changed,
 	output logic poll_inputs
 );
 
@@ -490,7 +493,13 @@ module Game (
 
 	logic [7:0] lfsr_state;
 
-	Lfsr lfsr(.clk, .reset_n, .state(lfsr_state));
+	logic [3:0] pauser;
+	always_ff @(posedge clk)
+		if (raw_buttons_changed)
+			pauser <= pixel[3:0];
+		else if (pauser != 4'b0000)
+			pauser <= pauser - 4'd1;
+	Lfsr lfsr(.clk, .reset_n, .enable(pauser != 4'd0), .state(lfsr_state));
 
 	logic primary_buffer;
 	assign primary_buffer = frame_parity;
@@ -499,12 +508,22 @@ module Game (
 	logic load_new_falling_tile;
 	logic spin;
 
+	logic [2:0] raw_new_falling_tile_kind;
+	always_comb begin
+		if (lfsr_state[2:0] != 3'd0)
+			raw_new_falling_tile_kind = lfsr_state[2:0];
+		else if (lfsr_state[5:3] != 3'd0)
+			raw_new_falling_tile_kind = lfsr_state[5:3];
+		else
+			raw_new_falling_tile_kind = 3'd1;
+	end
+
 	`ifdef __ICARUS__
-	assign new_falling_tile_kind = tile_t'(lfsr_state[2:0] == 3'd0 ? 3'd1 : lfsr_state[2:0]);
+	assign new_falling_tile_kind = tile_t'(raw_new_falling_tile_kind);
 	`elsif verilator
-	assign new_falling_tile_kind = tile_t'(lfsr_state[2:0] == 3'd0 ? 3'd1 : lfsr_state[2:0]);
+	assign new_falling_tile_kind = tile_t'(raw_new_falling_tile_kind);
 	`else
-	assign new_falling_tile_kind = (lfsr_state[2:0] == 3'd0 ? 3'd1 : lfsr_state[2:0]);
+	assign new_falling_tile_kind = (raw_new_falling_tile_kind);
 	`endif
 
 	assign load_new_falling_tile = (state == COLLAPSING);
@@ -556,11 +575,13 @@ module Game (
 	logic matrix_tile_valid;
 	assign matrix_tile_valid = (7'd1 <= horiz.tile && horiz.tile < 7'd11);
 
-	logic row_shift_enable;
-	assign row_shift_enable = (
-		horiz.subtile == 1'h1 && vert.tile < 6'd21 &&
-		(matrix_tile_valid || (7'd16 <= horiz.tile && horiz.tile < 7'd26))
+	logic row_shift_coarse_enable;
+	assign row_shift_coarse_enable = (
+		vert.tile < 6'd21 && (matrix_tile_valid || (7'd17 <= horiz.tile && horiz.tile < 7'd27))
 	);
+
+	logic row_shift_enable;
+	assign row_shift_enable = (horiz.subtile == 1'h1 && row_shift_coarse_enable);
 
 	tile_t matrix_tile;
 
@@ -633,8 +654,11 @@ module Game (
 	/* verilator lint_on WIDTH */
 
 	assign mem_write_enable = ~pixel[5];
-	assign mem_start = (pixel[4:0] == 5'b0 && pixel[6] != 1'b1);
-	assign mem_cont = row_shift_enable & (~mem_write_enable | ~write_disable);
+	// 0 <= pixel < 130
+	// pixel[4:0] == 5'b0 implies pixel % 32 == 0
+	// pixel[6] != 1'b1   implies pixel < 64 (or pixel is really big?)
+	assign mem_start = (pixel[4:1] == 4'b0 && pixel[7:6] == 2'b00);
+	assign mem_cont = row_shift_coarse_enable && ~(mem_write_enable & write_disable);
 
 	assign mem_data_out = (state == GAME_OVER) ? 3'b0 : written_tile;
 	//assign mem_data_out = { 1'b0, written_tile };
@@ -672,6 +696,10 @@ module Game (
 		r = displayed_tile[2];
 		g = displayed_tile[1];
 		b = displayed_tile[0];
+
+		/*r = mem_data_in[2];
+		g = mem_data_in[1];
+		b = mem_data_in[0];*/
 
 		/*if (pixel == 8'd2 || pixel == 8'd22) begin
 			r = 1'b1;
